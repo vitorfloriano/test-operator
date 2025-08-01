@@ -32,7 +32,7 @@ jobs:
 
       - name: Run alpha update
         run: |
-          kubebuilder alpha update --force || true
+          kubebuilder alpha update --force
 
       - name: Check commit history
         run: |

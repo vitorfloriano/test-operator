@@ -20,4 +20,8 @@ jobs:
       - name: Run linter
         uses: golangci/golangci-lint-action@v6
         with:
+<<<<<<< HEAD
+          version: v2.1.6
+=======
           version: v1.62.2
+>>>>>>> tmp-original-01-08-25-18-45

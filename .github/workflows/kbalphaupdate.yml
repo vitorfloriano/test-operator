@@ -1,0 +1,46 @@
+name: KB Alpha Update
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.PAT_TOKEN }}
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Install Kubebuilder
+      run: |
+        curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+        chmod +x kubebuilder
+        sudo mv kubebuilder /usr/local/bin/
+
+    - name: Run alpha update
+      run: |
+        kubebuilder alpha update --force
+
+    - name: Detect current branch
+      id: detect_branch
+      run: echo "PR_BRANCH=$(git branch --show-current)" >> $GITHUB_ENV
+
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v5
+      with:
+        commit-message: "chore: update Kubebuilder scaffolding"
+        title: "chore: update Kubebuilder scaffolding"
+        body: "Automated update of Kubebuilder project scaffolding to the latest version."
+        branch: ${{ env.PR_BRANCH }}
+        base: main

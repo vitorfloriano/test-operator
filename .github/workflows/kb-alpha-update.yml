@@ -2,9 +2,11 @@ name: Alpha Update
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 2" # Runs every Tuesday at 00:00 UTC
 
 jobs:
-    update:
+    alpha-update:
       runs-on: ubuntu-latest
 
       steps:
@@ -17,37 +19,40 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: 'stable'
 
       - name: Install Kubebuilder
         run: |
           curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
           chmod +x kubebuilder
           sudo mv kubebuilder /usr/local/bin/
-
+      
       - name: Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Run alpha update
+      
+      - name: Run kubebuilder alpha update
         run: |
           kubebuilder alpha update --force
-
+      
+      - name: Restore workflows directory
+        run: |
+          git restore --source=main --staged --worktree .github/workflows
+          git add .github/workflows
+          git commit --amend --no-edit 
+      
       - name: Check commit history
         run: |
           git status
           git log --all --oneline
-
-      - name: Check for changes and create PR
+      
+      - name: Detect merge branch and create PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Find the merge branch created by alpha update
-          PR_BRANCH=$(git branch --show-current)
+          PR_BRANCH=$(git branch --show-current) 
           git push origin "$PR_BRANCH"
-
-          # Create PR
           gh pr create \
             --title "chore: update Kubebuilder scaffolding" \
             --body "Automated update of Kubebuilder project scaffolding to latest version." \

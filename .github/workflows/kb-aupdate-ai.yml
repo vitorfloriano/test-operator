@@ -1,0 +1,109 @@
+name: Alpha Update AI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.find.outputs.files }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install Kubebuilder
+        run: |
+          curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+          chmod +x kubebuilder
+          sudo mv kubebuilder /usr/local/bin/
+
+      - name: Run alpha update
+        run: |
+          kubebuilder alpha update --force
+
+      - name: Find conflicted files
+        id: find
+        run: |
+         FILES=$(git grep --name-only '<<<<<<< HEAD' || true)
+         echo "files=$(echo "$FILES" | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> $GITHUB_OUTPUT
+
+
+  resolve:
+    needs: update
+    runs-on: ubuntu-latest
+    if: needs.update.outputs.files != '[]'
+    strategy:
+      matrix:
+        file: ${{ fromJson(needs.update.outputs.files) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Read file content
+        id: read
+        run: |
+          content=$(cat "${{ matrix.file }}" | sed 's/[][$`"\\]/\\&/g')
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$content" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Resolve conflict using GitHub Model
+        uses: actions/ai-inference@v1
+        id: resolve
+        with:
+          model: openai/gpt-4
+          prompt: |
+            You are an experienced Go and Kubernetes developer specialized in operators.
+
+            Resolve all the conflicts and return only the final result, without explanations.
+
+            File: ${{ matrix.file }}
+
+            Content:
+            ${{ steps.read.outputs.content }}
+
+      - name: Overwrite resolved file
+        run: |
+          echo "${{ steps.resolve.outputs.response }}" > "${{ matrix.file }}"
+
+      - name: Commit resolved file
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ matrix.file }}"
+          git commit -m "chore: auto-resolve conflict in ${{ matrix.file }}" || echo "no changes to commit"
+
+  create-pr:
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Push and create PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH=$(git branch --show-current)
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: update and auto-resolve Kubebuilder scaffolding" \
+            --body "This PR updates the Kubebuilder scaffolding and automatically resolves merge conflicts using GitHub Models." \
+            --base main \
+            --head "$BRANCH"

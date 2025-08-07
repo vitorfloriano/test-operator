@@ -1,0 +1,60 @@
+name: Alpha Update
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 2" # Runs every Monday at 00:00 UTC
+
+jobs:
+    alpha-update:
+      runs-on: ubuntu-latest
+
+      steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install Kubebuilder
+        run: |
+          curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+          chmod +x kubebuilder
+          sudo mv kubebuilder /usr/local/bin/
+      
+      - name: Configure Git
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Run kubebuilder alpha update
+        run: |
+          kubebuilder alpha update --force
+      
+      - name: Restore workflows directory
+        run: |
+          git restore --source=main --staged --worktree .github/workflows
+          git add .github/workflows
+          git commit --amend --no-edit 
+      
+      - name: Check commit history
+        run: |
+          git status
+          git log --all --oneline
+      
+      - name: Detect merge branch and create PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_BRANCH=$(git branch --show-current) 
+          git push origin "$PR_BRANCH"
+          gh pr create \
+            --title "chore: update Kubebuilder scaffolding" \
+            --body "Automated update of Kubebuilder project scaffolding to latest version." \
+            --base main \
+            --head "$PR_BRANCH"

@@ -1,5 +1,11 @@
 name: Alpha Update
 
+permissions:
+    contents: write
+    pull-requests: write
+    actions: write
+    issues: write
+
 on:
   workflow_dispatch:
   schedule:
@@ -13,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
           fetch-depth: 0
 
       - name: Set up Go
@@ -29,52 +35,38 @@ jobs:
       
       - name: Configure Git
         run: |
-          git config --local user.name "github-actions[bot]"
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "user"
+          git config --local user.email "user@users.noreply.github.com"
       
       - name: Run kubebuilder alpha update
         run: |
+          set -e
           kubebuilder alpha update --force
       
-      - name: Restore workflows directory
+      - name: Extract versions from merge commit
         run: |
-          git restore --source=main --staged --worktree .github/workflows
-          git add .github/workflows
-          git commit --amend --no-edit 
-      
-      - name: Check commit history
-        run: |
-          git status
-          git log --all --oneline
-      
-      - name: Detect merge branch and create PR
+          # Get the last commit message (alpha update final commit)
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          echo "Final commit message: $COMMIT_MSG"
+          
+          # Extract versions from commit message
+          versions=($(echo "$COMMIT_MSG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+'))
+          FROM_VER="${versions[0]:-unknown}"
+          TO_VER="${versions[1]:-unknown}"
+          
+          echo "PR_FROM_VERSION=$FROM_VER" >> "$GITHUB_ENV"
+          echo "PR_TO_VERSION=$TO_VER" >> "$GITHUB_ENV"
+          echo "Detected versions: $FROM_VER -> $TO_VER"
+    
+      - name: Create issue for Kubebuilder scaffold update
+        if: ${{ env.PR_FROM_VERSION != 'unknown' && env.PR_TO_VERSION != 'unknown' && env.PR_FROM_VERSION != env.PR_TO_VERSION }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          PR_BRANCH=$(git branch --show-current) 
-          git push origin "$PR_BRANCH"
-          gh pr create \
-            --title "chore: update Kubebuilder scaffolding" \
-            --body "Automated update of Kubebuilder project scaffolding to latest version." \
-            --base main \
-            --head "$PR_BRANCH"
-
-      - name: Grab PR number for this branch
-        id: find_pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          pr_number=$(gh pr list \
-            --state open \
-            --head "$PR_BRANCH" \
-            --json number \
-            --jq '.[0].number')   # pick the first (and only) match
-            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-
-      - name: Leave a comment in the PR
-        if: steps.find_pr.outputs.pr_number != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr comment "${{ steps.find_pr.outputs.pr_number }}" \
-          -b "Hi @copilot can you review the conflict markers/chunks in this PR and suggest changes?"
+          set -e
+          title="Update Kubebuilder scaffold from $PR_FROM_VERSION to $PR_TO_VERSION"
+          
+          gh issue create \
+            --assignee "@copilot" \
+            --title "$title" \
+            --body "We should update Kubebuilder scaffold from $PR_FROM_VERSION to $PR_TO_VERSION."

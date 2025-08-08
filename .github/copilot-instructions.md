@@ -53,6 +53,15 @@ test-operator is a Kubernetes operator built with Kubebuilder v4.6.0 that manage
   - `make test-e2e` -- runs e2e tests. **KNOWN ISSUE**: Fails in sandbox due to Docker build dependency
   - Alternative: Use `make install` + `kubectl apply -k config/samples/` to test CRDs manually
 
+### Kubebuilder Scaffolding Updates
+- Update project scaffolding to latest Kubebuilder version:
+  - **Prerequisites**: Install latest kubebuilder binary (v4.7.0+)
+  - `curl -L -o kubebuilder "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v4.7.0/kubebuilder_$(go env GOOS)_$(go env GOARCH)" && chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/`
+  - `kubebuilder alpha update --from-branch <current-branch> --from-version v4.6.0 --to-version v4.7.0` -- upgrades scaffolding using 3-way merge. FIRST RUN: ~5-10 minutes (downloads all dependencies). NEVER CANCEL.
+  - **Process**: Creates temporary git branches (ancestor, original, upgrade, merge) for safe 3-way merge
+  - **Manual resolution**: If conflicts occur, resolve them in the generated 'merge' branch
+  - **Cleanup**: Remove temporary branches after successful merge: `git branch -D tmp-*`
+
 ## Validation
 
 ### Always Test These Workflows
@@ -65,6 +74,7 @@ test-operator is a Kubernetes operator built with Kubebuilder v4.6.0 that manage
 - Regular build cycle: `make build` (~4s) + `make test` (~38s) + `make lint` (~2s) = ~45 seconds
 - CRD installation: ~34 seconds
 - Kind cluster creation: ~20-30 seconds
+- Kubebuilder scaffolding update: ~5-10 minutes (downloads all dependencies)
 
 ### Manual Validation Steps
 After making changes, always:
@@ -160,6 +170,9 @@ make manifests generate build-installer
 
 # Validate everything works
 make test lint build
+
+# Update to latest Kubebuilder (optional)
+kubebuilder alpha update --from-branch $(git branch --show-current) --from-version v4.6.0 --to-version v4.7.0
 ```
 
 **Troubleshooting:**

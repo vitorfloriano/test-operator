@@ -65,8 +65,17 @@ jobs:
         run: |
           set -e
           title="Update Kubebuilder scaffold from $PR_FROM_VERSION to $PR_TO_VERSION"
-          
-          gh issue create \
-            --assignee "@copilot" \
+
+          # Create issue (omit assignee here)
+          ISSUE_URL=$(gh issue create \
             --title "$title" \
-            --body "We should update Kubebuilder scaffold from $PR_FROM_VERSION to $PR_TO_VERSION."
+            --body "We should update Kubebuilder scaffold from $PR_FROM_VERSION to $PR_TO_VERSION.")
+          
+          echo "Created issue URL: $ISSUE_URL"
+
+          # Extract issue number (last path segment)
+          ISSUE_NUMBER="${ISSUE_URL##*/}"
+          echo "ISSUE_NUMBER=$ISSUE_NUMBER" >> "$GITHUB_ENV"
+
+          # Assign after creation (alternative to passing --assignee in create)
+          gh issue edit "$ISSUE_NUMBER" --add-assignee "@copilot"

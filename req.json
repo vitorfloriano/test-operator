@@ -1,0 +1,11 @@
+{
+  "model": "openai/gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": "You are a release-notes assistant.\nTask: Read the unified diff and write a concise PR description in Markdown.\n\nContext:\n- Change type: Kubebuilder alpha update\n- From: v4.6.0\n- To:   v4.7.1\n\nRequirements:\n- 200–300 words max.\n- A short intro line (what & why).\n- Bulleted highlights of notable changes (group by folder when possible).\n- If conflict markers appear in files (e.g., <<<<<<<), add a \"Conflicts\" note.\n- Add a checklist:\n  - [ ] Build passes\n  - [ ] Unit tests pass\n  - [ ] E2E (if applicable)\n\nDo NOT include the raw diff. Output Markdown only.\n---- DIFF BELOW ----\n"
+    }
+  ],
+  "max_tokens": 700,
+  "temperature": 0.2
+}

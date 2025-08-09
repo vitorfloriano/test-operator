@@ -4,6 +4,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  models: read
 
 on:
   workflow_dispatch:
@@ -40,7 +41,7 @@ jobs:
         fi
 
         echo "Current Kubebuilder version: v$current_version"
-        echo "current_version=$current_version" >> $GITHUB_OUTPUT
+        echo "current_version=$current_version" >> "$GITHUB_OUTPUT"
 
     - name: Fetch latest version
       id: latest-version
@@ -49,19 +50,22 @@ jobs:
       run: |
         latest_version=$(gh api repos/kubernetes-sigs/kubebuilder/releases/latest -q .tag_name | sed 's/^v//')
         echo "Latest Kubebuilder version: v$latest_version"
-        echo "latest_version=$latest_version" >> $GITHUB_OUTPUT
+        echo "latest_version=$latest_version" >> "$GITHUB_OUTPUT"
 
     - name: Compare versions
       id: version-check
       run: |
         current="${{ steps.current-version.outputs.current_version }}"
         latest="${{ steps.latest-version.outputs.latest_version }}"
-        if [ "$current" != "$latest" ]; then
-          echo "Update needed - versions differ"
-          echo "update_needed=true" >> $GITHUB_OUTPUT
+        [ -z "$current" ] && { echo "current missing"; exit 1; }
+        [ -z "$latest" ]  && { echo "latest missing"; exit 1; }
+
+        if [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)" != "$current" ]; then
+          echo "Update needed - $current < $latest"
+          echo "update_needed=true" >> "$GITHUB_OUTPUT"
         else
-          echo "No update needed - versions are the same"
-          echo "update_needed=false" >> $GITHUB_OUTPUT
+          echo "No update needed - $current >= $latest"
+          echo "update_needed=false" >> "$GITHUB_OUTPUT"
         fi
 
     - name: Set up Go
@@ -89,15 +93,15 @@ jobs:
         echo "From version v${{ steps.current-version.outputs.current_version }}"
         echo "To version v${{ steps.latest-version.outputs.latest_version }}"
         kubebuilder alpha update \
-        --from-version v${{ steps.current-version.outputs.current_version }} \
-        --to-version v${{ steps.latest-version.outputs.latest_version }} \
-        --force
+          --from-version v${{ steps.current-version.outputs.current_version }} \
+          --to-version v${{ steps.latest-version.outputs.latest_version }} \
+          --force
 
     - name: Restore workflows directory
       if: steps.version-check.outputs.update_needed == 'true'
       run: |
         git restore --source=${{ steps.base.outputs.sha }} \
-        --staged --worktree .github/workflows || true
+          --staged --worktree .github/workflows || true
 
     - name: Soft reset to base and checkout main at base commit
       if: steps.version-check.outputs.update_needed == 'true'
@@ -105,24 +109,109 @@ jobs:
         git reset --soft ${{ steps.base.outputs.sha }}
         git checkout -B main ${{ steps.base.outputs.sha }}
 
+    # ---------- AI-generated PR body ----------
+    - name: Create compact patch
+      if: steps.version-check.outputs.update_needed == 'true'
+      run: |
+        git diff --unified=0 --no-color > update.patch || true
+        head -c 200000 update.patch > update.patch.trim
+
+    - name: Prepare prompt for PR body
+      if: steps.version-check.outputs.update_needed == 'true'
+      run: |
+        cat > prompt.txt <<'EOF'
+        You are a release-notes assistant.
+        Task: Read the unified diff and write a concise PR description in Markdown.
+
+        Context:
+        - Change type: Kubebuilder alpha update
+        - From: ${FROM_VERSION}
+        - To:   ${TO_VERSION}
+
+        Requirements:
+        - 200–300 words max.
+        - A short intro line (what & why).
+        - Bulleted highlights of notable changes (group by folder when possible).
+        - If conflict markers appear in files (e.g., <<<<<<<), add a "Conflicts" note.
+        - Add a checklist:
+          - [ ] Build passes
+          - [ ] Unit tests pass
+          - [ ] E2E (if applicable)
+
+        Do NOT include the raw diff. Output Markdown only.
+        ---- DIFF BELOW ----
+        EOF
+
+        sed -i "s|\${FROM_VERSION}|v${{ steps.current-version.outputs.current_version }}|g" prompt.txt
+        sed -i "s|\${TO_VERSION}|v${{ steps.latest-version.outputs.latest_version }}|g" prompt.txt
+        cat update.patch.trim >> prompt.txt
+
+    - name: Generate PR body with GitHub Models
+      if: steps.version-check.outputs.update_needed == 'true'
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        MODEL_ID: openai/gpt-4o-mini
+      run: |
+        # Build request JSON from raw text file
+        jq -Rn --rawfile prompt prompt.txt '{
+          "model": env.MODEL_ID,
+          "messages": [{"role":"user","content": $prompt}],
+          "max_tokens": 700,
+          "temperature": 0.2
+        }' > req.json
+
+        # Call Models API (note the backslashes and Bearer token)
+        curl -sS "https://models.github.ai/inference/chat/completions" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer $GITHUB_TOKEN" \
+          --data @req.json \
+          -o resp.json
+
+        # Extract content
+        body=$(jq -r '.choices[0].message.content // empty' resp.json)
+        if [ -z "$body" ]; then
+          echo "Model returned empty body; using fallback."
+          body="Automated Kubebuilder update from v${{ steps.current-version.outputs.current_version }} to v${{ steps.latest-version.outputs.latest_version }}. Please review the diff."
+        fi
+        printf "%s\n" "$body" > PR_BODY.md
+
+    # ---------- /AI-generated PR body ----------
+
+    - name: Detect changes
+      id: changes
+      if: steps.version-check.outputs.update_needed == 'true'
+      run: |
+        if git diff --staged --quiet && git diff --quiet; then
+          echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          echo "No changes to commit."
+        else
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Create PR with peter-evans
       id: cpr
-      if: steps.version-check.outputs.update_needed == 'true'
+      if: steps.version-check.outputs.update_needed == 'true' && steps.changes.outputs.has_changes == 'true'
       uses: peter-evans/create-pull-request@v7.0.8
       continue-on-error: true
       with:
         branch: ${{ env.BRANCH_NAME }}
         commit-message: |
-          (chore) update Kubebuilder scaffold from v${{ steps.current-version.outputs.current_version }} to v${{ steps.latest-version.outputs.latest_version }}
+          chore: update Kubebuilder scaffold from v${{ steps.current-version.outputs.current_version }} to v${{ steps.latest-version.outputs.latest_version }}
 
           Automated update via workflow.
-        title: >
-          (chore) Update Kubebuilder scaffold 
-          from v${{ steps.current-version.outputs.current_version }}
-          to v${{ steps.latest-version.outputs.latest_version }}
-        body: "Automated update via workflow."
+        title: "chore: update Kubebuilder scaffold"
+        body-file: PR_BODY.md
 
-    - name: Prepare issue body
+    - name: Log PR result
+      if: steps.version-check.outputs.update_needed == 'true' && steps.changes.outputs.has_changes == 'true'
+      run: |
+        if [ -n "${{ steps.cpr.outputs.pull-request-url }}" ]; then
+          echo "PR: ${{ steps.cpr.outputs.pull-request-url }}"
+        else
+          echo "No PR created (no changes or action failed)."
+        fi
+
+    - name: Prepare issue body (fallback)
       if: steps.version-check.outputs.update_needed == 'true' && (steps.cpr.outcome == 'failure' || !steps.cpr.outputs.pull-request-url)
       run: |
         cat > issue_body.md <<EOF
@@ -138,31 +227,36 @@ jobs:
 
         _This issue was created by the Alpha Update workflow._
         EOF
+        # Optionally append the model output for context
+        if [ -f PR_BODY.md ]; then
+          { echo; echo "----"; echo; cat PR_BODY.md; } >> issue_body.md
+        fi
 
     - name: Find existing update issue
       id: find-issue
       if: steps.version-check.outputs.update_needed == 'true' && (steps.cpr.outcome == 'failure' || !steps.cpr.outputs.pull-request-url)
-      run: |
-        num=$(gh issue list --state open --search "Update Kubebuilder" --json number,title \
-          | jq -r '.[] | select(.title | contains("Update Kubebuilder")) | .number' | head -1)
-        echo "number=$num" >> $GITHUB_OUTPUT
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        num=$(gh issue list --state open \
+          --search "in:title Update Kubebuilder from v${{ steps.current-version.outputs.current_version }} to v${{ steps.latest-version.outputs.latest_version }}" \
+          --json number --jq '.[0].number')
+        echo "number=$num" >> "$GITHUB_OUTPUT"
 
     - name: Create issue (fallback)
       if: steps.version-check.outputs.update_needed == 'true' && (steps.cpr.outcome == 'failure' || !steps.cpr.outputs.pull-request-url) && steps.find-issue.outputs.number == ''
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         gh issue create \
           --title "Update Kubebuilder from v${{ steps.current-version.outputs.current_version }} to v${{ steps.latest-version.outputs.latest_version }}" \
           --body-file issue_body.md
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Update existing issue (fallback)
       if: steps.version-check.outputs.update_needed == 'true' && (steps.cpr.outcome == 'failure' || !steps.cpr.outputs.pull-request-url) && steps.find-issue.outputs.number != ''
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         gh issue edit ${{ steps.find-issue.outputs.number }} \
           --title "Update Kubebuilder from v${{ steps.current-version.outputs.current_version }} to v${{ steps.latest-version.outputs.latest_version }}" \
           --body-file issue_body.md
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,11 @@
+{
+  "model": "openai/gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": "You are an assistant generating a professional pull request description for a Kubebuilder scaffold update.\n\n## Context\n- This update was performed by the \"Alpha Update\" GitHub Actions workflow.\n- The goal is to update the Kubebuilder CLI scaffold from one version to another while preserving custom code.\n- The diff below contains all changes introduced by the update.\n\n## Requirements for the output:\n1. Start with a short, clear summary sentence of what changed (max 1 line).\n2. Follow with bullet points describing the key changes, grouped logically.\n3. If the diff includes conflict markers or unresolved code, note that reviewers must resolve them before merge.\n4. Avoid generic filler phrases (e.g., \"minor changes\").\n5. Do **not** wrap the output in code blocks or triple backticks.\n6. Use pure GitHub-Flavored Markdown (GFM).\n\n## Diff:\n<START OF DIFF>\n\n<END OF DIFF>\n"
+    }
+  ],
+  "max_tokens": 1200,
+  "temperature": 0.2
+}

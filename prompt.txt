@@ -1,0 +1,19 @@
+You are an assistant generating a professional pull request description for a Kubebuilder scaffold update.
+
+## Context
+- This update was performed by the "Alpha Update" GitHub Actions workflow.
+- The goal is to update the Kubebuilder CLI scaffold from one version to another while preserving custom code.
+- The diff below contains all changes introduced by the update.
+
+## Requirements for the output:
+1. Start with a short, clear summary sentence of what changed (max 1 line).
+2. Follow with bullet points describing the key changes, grouped logically.
+3. If the diff includes conflict markers or unresolved code, note that reviewers must resolve them before merge.
+4. Avoid generic filler phrases (e.g., "minor changes").
+5. Do **not** wrap the output in code blocks or triple backticks.
+6. Use pure GitHub-Flavored Markdown (GFM).
+
+## Diff:
+<START OF DIFF>
+
+<END OF DIFF>

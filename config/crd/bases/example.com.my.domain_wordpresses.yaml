@@ -17,7 +17,7 @@ spec:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: Wordpress is the Schema for the wordpresses API.
+        description: Wordpress is the Schema for the wordpresses API
         properties:
           apiVersion:
             description: |-
@@ -37,8 +37,17 @@ spec:
           metadata:
             type: object
           spec:
-            description: WordpressSpec defines the desired state of Wordpress.
+            description: spec defines the desired state of Wordpress
             properties:
+<<<<<<< HEAD
+              foo:
+                description: foo is an example field of Wordpress. Edit wordpress_types.go
+                  to remove/update
+                type: string
+            type: object
+          status:
+            description: status defines the observed state of Wordpress
+=======
               size:
                 description: |-
                   Size defines the number of Memcached instances
@@ -111,7 +120,10 @@ spec:
                   - type
                   type: object
                 type: array
+>>>>>>> tmp-original-12-08-25-05-31
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

@@ -42,6 +42,6 @@ jobs:
         kubebuilder alpha update \
           --force \
           --preserve-path .github/workflows \
-          --open-pr
+          --open-pr \
           --open-issue
 

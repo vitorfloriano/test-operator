@@ -1,0 +1,47 @@
+name: Alpha Update
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 2" # Every Tuesday at 00:00 UTC
+
+jobs:
+  alpha-update:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: stable
+
+    - name: Install Kubebuilder
+      run: |
+        git clone --depth 1 --branch open-pr-issue-flags \
+          https://github.com/vitorfloriano/kubebuilder.git /tmp/kubebuilder
+        cd /tmp/kubebuilder
+        make build
+        sudo cp bin/kubebuilder /usr/local/bin/
+        kubebuilder version
+
+    - name: Run kubebuilder alpha update
+      run: |
+        kubebuilder alpha update \
+          --force \
+          --preserve-path .github/workflows \
+          --open-pr
+          --open-issue
+

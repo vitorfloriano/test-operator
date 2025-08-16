@@ -57,7 +57,7 @@ type WordpressCustomDefaulter struct {
 var _ webhook.CustomDefaulter = &WordpressCustomDefaulter{}
 
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind Wordpress.
-func (d *WordpressCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
+func (d *WordpressCustomDefaulter) Default(_ context.Context, obj runtime.Object) error {
 	wordpress, ok := obj.(*examplecomv1.Wordpress)
 
 	if !ok {
@@ -87,7 +87,7 @@ type WordpressCustomValidator struct {
 var _ webhook.CustomValidator = &WordpressCustomValidator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Wordpress.
-func (v *WordpressCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *WordpressCustomValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
 	wordpress, ok := obj.(*examplecomv1.Wordpress)
 	if !ok {
 		return nil, fmt.Errorf("expected a Wordpress object but got %T", obj)
@@ -100,7 +100,7 @@ func (v *WordpressCustomValidator) ValidateCreate(ctx context.Context, obj runti
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Wordpress.
-func (v *WordpressCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (v *WordpressCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	wordpress, ok := newObj.(*examplecomv1.Wordpress)
 	if !ok {
 		return nil, fmt.Errorf("expected a Wordpress object for the newObj but got %T", newObj)

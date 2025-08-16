@@ -1,0 +1,65 @@
+name: Alpha Update
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 2" # Every Tuesday at 00:00 UTC
+
+jobs:
+  alpha-update:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: stable
+
+    - name: Configure Git
+      run: |
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Install Kubebuilder
+      run: |
+        git clone --depth 1 --branch fix-preserve \
+          https://github.com/vitorfloriano/kubebuilder.git /tmp/kubebuilder
+        cd /tmp/kubebuilder
+        make build
+        sudo cp bin/kubebuilder /usr/local/bin/
+        kubebuilder version
+
+    - name: Run kubebuilder alpha update
+      run: |
+        kubebuilder alpha update \
+          --force \
+          --preserve-path .github/workflows 
+
+    - name: Push updated branch
+      run: |
+        CURRENT_BRANCH=$(git branch --show-current)
+        git add .
+        git commit -m "kubebuilder alpha update" || echo "No changes to commit"
+        git push -u origin $CURRENT_BRANCH
+        echo "BRANCH_NAME=$CURRENT_BRANCH" >> $GITHUB_ENV
+
+    - name: Create issue with PR URL
+      run: |
+        PR_URL="https://github.com/${{ github.repository }}/compare/main...${{ env.BRANCH_NAME }}"
+        gh issue create \
+          --title "Kubebuilder Alpha Update Available" \
+          --body "A kubebuilder alpha update has been performed. Please review the changes and create a pull request: $PR_URL"
+

@@ -35,7 +35,7 @@ jobs:
 
     - name: Install Kubebuilder
       run: |
-        git clone --depth 1 --branch debug-mode \
+        git clone --depth 1 --branch show-commits-and-preserve \
           https://github.com/vitorfloriano/kubebuilder.git /tmp/kubebuilder
         cd /tmp/kubebuilder
         make build
@@ -47,6 +47,7 @@ jobs:
         kubebuilder alpha update \
           --force \
           --preserve-path .github/workflows \
+          --show-commits
           
     - name: Push updated branch
       run: |

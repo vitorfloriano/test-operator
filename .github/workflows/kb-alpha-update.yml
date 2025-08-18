@@ -35,7 +35,7 @@ jobs:
 
     - name: Install Kubebuilder
       run: |
-        git clone --depth 1 --branch show-commits-and-preserve \
+        git clone --depth 1 --branch pr-5017 \
           https://github.com/vitorfloriano/kubebuilder.git /tmp/kubebuilder
         cd /tmp/kubebuilder
         make build

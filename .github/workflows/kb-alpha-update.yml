@@ -46,16 +46,9 @@ jobs:
       run: |
         kubebuilder alpha update \
           --force \
+          --git-config merge.conflictStyle=diff3 \
           --preserve-path .github/workflows \
-          --show-commits
-          
-    - name: Push updated branch
-      run: |
-        CURRENT_BRANCH=$(git branch --show-current)
-        git add .
-        git commit -m "kubebuilder alpha update" || echo "No changes to commit"
-        git push -u origin $CURRENT_BRANCH
-        echo "BRANCH_NAME=$CURRENT_BRANCH" >> $GITHUB_ENV
+          --push
 
     - name: Create issue with PR URL
       run: |

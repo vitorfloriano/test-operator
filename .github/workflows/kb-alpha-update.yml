@@ -46,7 +46,7 @@ jobs:
       run: |
         kubebuilder alpha update \
           --force \
-          --git-config merge.conflictStyle=diff3 \
+          --git-config merge.conflictStyle=diff5 \
           --preserve-path .github/workflows \
           --push
 

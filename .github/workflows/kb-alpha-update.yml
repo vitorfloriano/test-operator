@@ -53,7 +53,7 @@ jobs:
     - name: Grace period for issue creation
       run: |
         echo "[update] Waiting briefly for GitHub to index the new issue…"
-        sleep 15
+        sleep 20
 
     - name: Determine update issue number
       id: find-issue
@@ -61,33 +61,33 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         set -euo pipefail
-        echo "[find-issue] Searching for latest Kubebuilder update issue…"
+        echo "[find-issue] Searching for latest '[Action Required] Upgrade the Scaffold' issue…"
         issue_number=""
         for i in $(seq 1 24); do
           echo "[find-issue] Attempt $i"
 
-          # Try gh issue list with search (suppresses stderr; times out)
+          # Prefer gh issue list with server-side search; suppress stderr
           if out=$(timeout 20s gh issue list --state open --limit 100 \
                 --json number,title,createdAt \
-                --search 'in:title "update kubebuilder from version"' 2>/dev/null); then
+                --search 'in:title "Upgrade the Scaffold:"' 2>/dev/null); then
             issue_number=$(echo "$out" | jq -r '
               sort_by(.createdAt)
-              | map(select(.title|test("^update kubebuilder from version v[0-9.]+ to version v[0-9.]+$")))
+              | map(select(.title|test("^\\[Action Required\\] Upgrade the Scaffold: v[0-9.]+ -> v[0-9.]+$")))
               | last.number // empty')
           fi
 
-          # Fallback to REST issues list with regex match
+          # Fallback to REST issues list (no search)
           if [ -z "$issue_number" ]; then
             issue_number=$(timeout 20s gh api "repos/${GITHUB_REPOSITORY}/issues" -X GET \
               -f state=open -f per_page=100 \
-              --jq 'map(select(.title|test("^update kubebuilder from version v[0-9.]+ to version v[0-9.]+$")))
+              --jq 'map(select(.title|test("^\\[Action Required\\] Upgrade the Scaffold: v[0-9.]+ -> v[0-9.]+$")))
                     | sort_by(.created_at) | last.number // empty' 2>/dev/null || true)
           fi
 
-          # Keep only digits to avoid breaking GITHUB_OUTPUT on API error bodies
-          case "$issue_number" in
-            ''|*[!0-9]*) issue_number="";;
-          esac
+          # Validate numeric to avoid polluting $GITHUB_OUTPUT
+          if ! echo "$issue_number" | grep -Eq '^[0-9]+$'; then
+            issue_number=""
+          fi
 
           if [ -n "$issue_number" ]; then
             echo "[find-issue] Found issue #$issue_number"
@@ -97,9 +97,6 @@ jobs:
           sleep 5
         done
 
-        if [ -z "${issue_number}" ]; then
-          echo "[find-issue] No matching issue found after waiting; skipping AI comment."
-        fi
         echo "issue_number=${issue_number}" >> "$GITHUB_OUTPUT"
 
     - name: Create compact patch of last commit

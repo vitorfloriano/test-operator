@@ -35,9 +35,11 @@ jobs:
 
     - name: Install Kubebuilder
       run: |
-        curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
-        chmod +x kubebuilder
-        sudo mv kubebuilder /usr/local/bin/
+        git clone --depth 1 --branch master \
+          https://github.com/kubernetes-sigs/kubebuilder.git /tmp/kubebuilder
+        cd /tmp/kubebuilder
+        make build
+        sudo cp bin/kubebuilder /usr/local/bin/
         kubebuilder version
 
     - name: Run kubebuilder alpha update

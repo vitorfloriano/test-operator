@@ -189,4 +189,4 @@ jobs:
           exit 0
         fi
         echo "[comment] Posting to issue #$issue"
-        gh api repos/${{ github.repository }}/issues/$issue/comments -f body=@COMMENT.md
+        gh issue comment "$issue" --body-file COMMENT.md

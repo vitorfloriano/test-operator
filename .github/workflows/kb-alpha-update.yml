@@ -50,32 +50,45 @@ jobs:
           --push \
           --open-gh-issue
 
+    - name: Grace period for issue creation
+      run: |
+        echo "[update] Waiting briefly for GitHub to index the new issue…"
+        sleep 10
+
     - name: Determine update issue number
       id: find-issue
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         set -euo pipefail
-        echo "[find-issue] Looking for latest Kubebuilder update issue…"
+        echo "[find-issue] Searching for latest Kubebuilder update issue…"
         issue_number=""
-        # Up to 5 quick retries (handles race after --open-gh-issue)
-        for i in 1 2 3 4 5; do
-          # timeout to avoid indefinite hang
-            if issues_json=$(timeout 25s gh api "repos/${GITHUB_REPOSITORY}/issues" -X GET -f state=open -f per_page=50 \
-              --jq 'map(select(.user.login=="github-actions[bot]" and (.title|test("^update kubebuilder from version v[0-9.]+ to version v[0-9.]+$")))) 
-                | sort_by(.created_at) | last.number // empty'); then
-              issue_number="$issues_json"
-              if [ -n "$issue_number" ]; then
-                echo "[find-issue] Found issue #$issue_number on attempt $i"
-                break
-              fi
-            else
-              echo "[find-issue] gh api failed (attempt $i)"; sleep 2
-            fi
-          sleep 2
+        for i in $(seq 1 18); do
+          echo "[find-issue] Attempt $i"
+          # Prefer Search API (fast, server-side sorted)
+          issue_number=$(timeout 20s gh api search/issues \
+            -f q="repo:${GITHUB_REPOSITORY} is:issue is:open in:title \"update kubebuilder from version\"" \
+            -f sort=created -f order=desc -f per_page=1 \
+            --jq '.items[0].number // empty' || true)
+
+          # Fallback to issues list with regex match on title
+          if [ -z "$issue_number" ]; then
+            issue_number=$(timeout 20s gh api "repos/${GITHUB_REPOSITORY}/issues" -X GET \
+              -f state=open -f per_page=100 \
+              --jq 'map(select(.title|test("^update kubebuilder from version v[0-9.]+ to version v[0-9.]+$"))) 
+                    | sort_by(.created_at) | last.number // empty' || true)
+          fi
+
+          if [ -n "$issue_number" ]; then
+            echo "[find-issue] Found issue #$issue_number"
+            break
+          fi
+          echo "[find-issue] Not found yet; sleeping 5s"
+          sleep 5
         done
+
         if [ -z "${issue_number}" ]; then
-          echo "[find-issue] No matching issue found; skipping AI comment."
+          echo "[find-issue] No matching issue found after waiting; skipping AI comment."
         fi
         echo "issue_number=${issue_number}" >> "$GITHUB_OUTPUT"
 

@@ -34,6 +34,11 @@ jobs:
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
 
+    - name: Install Ollama
+      run: |
+        curl -fsSL https://ollama.com/install.sh | sh
+        ollama pull gemma3:270m
+
     - name: Install Kubebuilder
       run: |
         git clone --depth 1 --branch master \
@@ -67,7 +72,6 @@ jobs:
         for i in $(seq 1 24); do
           echo "[find-issue] Attempt $i"
 
-          # Prefer gh issue list with server-side search; suppress stderr
           if out=$(timeout 20s gh issue list --state open --limit 100 \
                 --json number,title,createdAt \
                 --search 'in:title "Upgrade the Scaffold:"' 2>/dev/null); then
@@ -77,7 +81,6 @@ jobs:
               | last.number // empty')
           fi
 
-          # Fallback to REST issues list (no search)
           if [ -z "$issue_number" ]; then
             issue_number=$(timeout 20s gh api "repos/${GITHUB_REPOSITORY}/issues" -X GET \
               -f state=open -f per_page=100 \
@@ -85,7 +88,6 @@ jobs:
                     | sort_by(.created_at) | last.number // empty' 2>/dev/null || true)
           fi
 
-          # Validate numeric to avoid polluting $GITHUB_OUTPUT
           if ! echo "$issue_number" | grep -Eq '^[0-9]+$'; then
             issue_number=""
           fi
@@ -136,46 +138,18 @@ jobs:
         cat update.patch.trim >> prompt.txt
         echo "[prompt] Prompt chars: $(wc -c < prompt.txt)"
 
-    - name: Generate summary with GitHub Models
+    - name: Generate summary with Ollama
       id: model
       if: steps.find-issue.outputs.issue_number != ''
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        MODEL_ID: openai/gpt-4o-mini
       run: |
         set -euo pipefail
-        echo "[model] Creating request JSON"
-        jq -Rn --rawfile prompt prompt.txt '{
-          model: env.MODEL_ID,
-          messages: [{role:"user", content:$prompt}],
-          max_tokens: 500,
-          temperature: 0.2
-        }' > req.json
-        echo "[model] Calling model (timeout safeguards)"
-        if ! curl -sS -w "\n%{http_code}\n" --connect-timeout 10 --max-time 45 \
-          https://models.github.ai/inference/chat/completions \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer $GITHUB_TOKEN" \
-          --data @req.json -o resp.body > resp.meta; then
-          echo "[model] Curl request failed"
-          exit 1
+        echo "[model] Running Ollama locally with gemma3:270m"
+        response=$(ollama run gemma3:270m < prompt.txt)
+        if [ -z "$response" ]; then
+          echo "[model] Empty response; using fallback."
+          response="Automated summary unavailable. Please review the diff."
         fi
-        status=$(tail -n1 resp.meta)
-        if [ "$status" != "200" ]; then
-          echo "[model] Non-200 status: $status"
-          echo "[model] Response:"
-          sed -n '1,200p' resp.body
-          echo "chars=0" >> "$GITHUB_OUTPUT"
-          printf "Automated summary unavailable (HTTP %s). Please review the diff." "$status" > COMMENT.md
-          exit 0
-        fi
-        summary=$(jq -r '.choices[0].message.content // empty' resp.body || true)
-        if [ -z "$summary" ]; then
-          echo "[model] Empty model content; using fallback."
-          summary="Automated summary unavailable. Please review the latest commit diff for the Kubebuilder update."
-        fi
-        printf "%s\n" "$summary" > COMMENT.md
-        echo "[model] Summary chars: $(wc -c < COMMENT.md)"
+        printf "%s\n" "$response" > COMMENT.md
         echo "chars=$(wc -c < COMMENT.md)" >> "$GITHUB_OUTPUT"
 
     - name: Post comment to issue

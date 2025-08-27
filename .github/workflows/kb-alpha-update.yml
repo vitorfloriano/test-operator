@@ -71,4 +71,3 @@ jobs:
           --push \
           --restore-path .github/workflows \
           --open-gh-issue \
-          --use-gh-models

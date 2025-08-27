@@ -1,8 +1,12 @@
 module github/camilamacedo86/test-operator
 
+<<<<<<< HEAD
+go 1.24.5
+=======
 go 1.23.0
 
 godebug default=go1.23
+>>>>>>> tmp-original-27-08-25-15-14
 
 require (
 	github.com/onsi/ginkgo/v2 v2.19.0

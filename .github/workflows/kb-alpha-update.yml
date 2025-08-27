@@ -41,21 +41,18 @@ jobs:
 
     - name: Install Kubebuilder
       run: |
-        git clone --depth 1 --branch master \
-          https://github.com/kubernetes-sigs/kubebuilder.git /tmp/kubebuilder
-        cd /tmp/kubebuilder
-        make build
-        sudo cp bin/kubebuilder /usr/local/bin/
+        curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+        chmod +x kubebuilder
+        sudo mv kubebuilder /usr/local/bin/
         kubebuilder version
 
     - name: Run kubebuilder alpha update
       run: |
         kubebuilder alpha update \
           --force \
-          --restore-path .github/workflows \
-          --squash \
           --push \
-          --open-gh-issue
+          --restore-path .github/workflows \
+          --open-gh-issue 
 
     - name: Grace period for issue creation
       run: |

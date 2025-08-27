@@ -104,11 +104,14 @@ jobs:
       if: steps.find-issue.outputs.issue_number != ''
       run: |
         ollama pull gemma3:270m
+        echo "let's summarize!"
         response=$(ollama run gemma3:270m < prompt.txt)
+        echo "prompt sent to model"
         if [ -z "$response" ]; then
           response="Automated summary unavailable. Please review the diff."
         fi
         echo "$response" > COMMENT.md
+        echo "responde sent to comment file"
         echo "chars=$(wc -c < COMMENT.md)" >> "$GITHUB_OUTPUT"
 
     - name: Post comment to issue

@@ -37,7 +37,7 @@ jobs:
     - name: Install Ollama
       run: |
         curl -fsSL https://ollama.com/install.sh | sh
-        ollama pull gemma3:270m
+        nohup ollama serve > ollama.log 2>&1 &
 
     - name: Install Kubebuilder
       run: |
@@ -143,6 +143,8 @@ jobs:
       if: steps.find-issue.outputs.issue_number != ''
       run: |
         set -euo pipefail
+        echo "[model] Pulling model gemma3:270m (if not cached)"
+        ollama pull gemma3:270m
         echo "[model] Running Ollama locally with gemma3:270m"
         response=$(ollama run gemma3:270m < prompt.txt)
         if [ -z "$response" ]; then

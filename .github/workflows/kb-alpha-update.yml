@@ -53,6 +53,7 @@ jobs:
         kubebuilder alpha update \
           --force \
           --restore-path .github/workflows \
+          --squash \
           --push \
           --open-gh-issue
 

@@ -1,9 +1,13 @@
-name: Alpha Update
+name: Auto Update
 
+# The 'kubebuilder alpha update 'command requires write access to the repository to create a branch
+# with the update files and allow you to open a pull request using the link provided in the issue.
+# The branch created will be named in the format kubebuilder-update-from-<from-version>-to-<to-version> by default.
+# To protect your codebase, please ensure that you have branch protection rules configured for your 
+# main branches. This will guarantee that no one can bypass a review and push directly to a branch like 'main'.
 permissions:
   contents: write
   issues: write
-  pull-requests: write
   models: read
 
 on:
@@ -12,11 +16,12 @@ on:
     - cron: "0 0 * * 2" # Every Tuesday at 00:00 UTC
 
 jobs:
-  alpha-update:
+  auto-update:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    # Step 1: Checkout the repository.
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -24,21 +29,19 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
     
+    # Step 2: Configure Git to create commits with the GitHub Actions bot.
+    - name: Configure Git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+    # Step 3: Set up Go environment.
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: stable
 
-    - name: Configure Git
-      run: |
-        git config --local user.name "github-actions[bot]"
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-
-    - name: Install Ollama
-      run: |
-        curl -fsSL https://ollama.com/install.sh | sh
-        nohup ollama serve > ollama.log 2>&1 &
-
+    # Step 4: Install Kubebuilder.
     - name: Install Kubebuilder
       run: |
         curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
@@ -46,122 +49,26 @@ jobs:
         sudo mv kubebuilder /usr/local/bin/
         kubebuilder version
 
+    # Step 5: Install Models extension for GitHub CLI
+    - name: Install/upgrade gh-models extension
+      run: |
+        gh extension install github/gh-models --force
+        gh models --help >/dev/null
+
+    # Step 6: Run the Kubebuilder alpha update command.
+    # More info: https://kubebuilder.io/reference/commands/alpha_update
     - name: Run kubebuilder alpha update
       run: |
+       # Executes the update command with specified flags.
+       # --force: Completes the merge even if conflicts occur, leaving conflict markers.
+       # --push: Automatically pushes the resulting output branch to the 'origin' remote.
+       # --restore-path: Preserves specified paths (e.g., CI workflow files) when squashing.
+       # --open-gh-issue: Creates a GitHub Issue with a link for opening a PR for review.
+       # --open-gh-models: Adds an AI-generated comment to the created Issue with
+       #   a short overview of the scaffold changes and conflict-resolution guidance (If Any).
         kubebuilder alpha update \
           --force \
           --push \
           --restore-path .github/workflows \
-          --open-gh-issue 
-
-    - name: Grace period for issue creation
-      run: |
-        echo "[update] Waiting briefly for GitHub to index the new issue…"
-        sleep 20
-
-    - name: Determine update issue number
-      id: find-issue
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        set -euo pipefail
-        echo "[find-issue] Searching for latest '[Action Required] Upgrade the Scaffold' issue…"
-        issue_number=""
-        for i in $(seq 1 24); do
-          echo "[find-issue] Attempt $i"
-
-          if out=$(timeout 20s gh issue list --state open --limit 100 \
-                --json number,title,createdAt \
-                --search 'in:title "Upgrade the Scaffold:"' 2>/dev/null); then
-            issue_number=$(echo "$out" | jq -r '
-              sort_by(.createdAt)
-              | map(select(.title|test("^\\[Action Required\\] Upgrade the Scaffold: v[0-9.]+ -> v[0-9.]+$")))
-              | last.number // empty')
-          fi
-
-          if [ -z "$issue_number" ]; then
-            issue_number=$(timeout 20s gh api "repos/${GITHUB_REPOSITORY}/issues" -X GET \
-              -f state=open -f per_page=100 \
-              --jq 'map(select(.title|test("^\\[Action Required\\] Upgrade the Scaffold: v[0-9.]+ -> v[0-9.]+$")))
-                    | sort_by(.created_at) | last.number // empty' 2>/dev/null || true)
-          fi
-
-          if ! echo "$issue_number" | grep -Eq '^[0-9]+$'; then
-            issue_number=""
-          fi
-
-          if [ -n "$issue_number" ]; then
-            echo "[find-issue] Found issue #$issue_number"
-            break
-          fi
-          echo "[find-issue] Not found yet; sleeping 5s"
-          sleep 5
-        done
-
-        echo "issue_number=${issue_number}" >> "$GITHUB_OUTPUT"
-
-    - name: Create compact patch of last commit
-      if: steps.find-issue.outputs.issue_number != ''
-      run: |
-        set -euo pipefail
-        echo "[patch] Current branch: $(git rev-parse --abbrev-ref HEAD)"
-        echo "[patch] Capturing last commit diff (u=0)…"
-        git show --no-color --unified=0 --pretty=format: --no-renames HEAD > update.patch
-        head -c 200000 update.patch > update.patch.trim
-        echo "[patch] Patch size bytes: $(wc -c < update.patch.trim)"
-
-    - name: Prepare model prompt
-      if: steps.find-issue.outputs.issue_number != ''
-      run: |
-        set -euo pipefail
-        echo "[prompt] Building prompt file"
-        cat > prompt.txt <<'EOF'
-        You are a concise change summarization assistant.
-
-        Task:
-        Summarize the provided unified diff (single commit from an automated Kubebuilder alpha scaffold update) for a GitHub issue comment.
-
-        Include:
-        1. One-line overview (what & why).
-        2. Bullet list of notable changes grouped roughly by directory or concern.
-        3. Note any occurrences of conflict markers if present (e.g., <<<<<<<).
-        4. Quick checklist:
-           - [ ] Build & generate succeed
-           - [ ] Tests pass
-           - [ ] Manual review of CRD / RBAC changes
-        5. Keep <= 170 words. No raw diff. Markdown only.
-
-        ---- DIFF BELOW ----
-        EOF
-        cat update.patch.trim >> prompt.txt
-        echo "[prompt] Prompt chars: $(wc -c < prompt.txt)"
-
-    - name: Generate summary with Ollama
-      id: model
-      if: steps.find-issue.outputs.issue_number != ''
-      run: |
-        set -euo pipefail
-        echo "[model] Pulling model gemma3:270m (if not cached)"
-        ollama pull gemma3:270m
-        echo "[model] Running Ollama locally with gemma3:270m"
-        response=$(ollama run gemma3:270m < prompt.txt)
-        if [ -z "$response" ]; then
-          echo "[model] Empty response; using fallback."
-          response="Automated summary unavailable. Please review the diff."
-        fi
-        printf "%s\n" "$response" > COMMENT.md
-        echo "chars=$(wc -c < COMMENT.md)" >> "$GITHUB_OUTPUT"
-
-    - name: Post comment to issue
-      if: steps.find-issue.outputs.issue_number != ''
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        set -euo pipefail
-        issue=${{ steps.find-issue.outputs.issue_number }}
-        if [ -z "$issue" ]; then
-          echo "[comment] No issue number; skipping."
-          exit 0
-        fi
-        echo "[comment] Posting to issue #$issue"
-        gh issue comment "$issue" --body-file COMMENT.md
+          --open-gh-issue \
+          --use-gh-models
